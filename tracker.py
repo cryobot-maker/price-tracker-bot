@@ -14,6 +14,8 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 # Load environment variables
 load_dotenv()
@@ -24,10 +26,10 @@ SHEET_NAME = "Price Tracker 2026"
 GOOGLE_CREDENTIALS_JSON = os.getenv("GOOGLE_CREDENTIALS_JSON")
 
 def get_driver():
-    """Sets up a Stealthy Chrome browser."""
+    """Sets up a Stealthy Chrome browser with Referer spoofing."""
     chrome_options = Options()
     
-    # --- STEALTH MODE SETTINGS ---
+    # --- STEALTH SETTINGS ---
     chrome_options.add_argument("--headless") 
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
@@ -36,8 +38,8 @@ def get_driver():
     chrome_options.add_argument("--disable-blink-features=AutomationControlled")
     chrome_options.add_argument("--enable-javascript")
     
-    # Randomize User Agent slightly to avoid static blocking
-    user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    # Fake User Agent
+    user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
     chrome_options.add_argument(f"user-agent={user_agent}")
     
     chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
@@ -45,7 +47,7 @@ def get_driver():
 
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
     
-    # Execute CDP command to hide selenium
+    # Hide WebDriver property
     driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
         "source": """
             Object.defineProperty(navigator, 'webdriver', {
@@ -70,8 +72,7 @@ def clean_price(text):
     return None
 
 def get_smart_price(soup):
-    """Checks JSON-LD and Meta tags."""
-    # 1. Check JSON-LD
+    """Checks JSON-LD (Hidden Data) for Price."""
     scripts = soup.find_all('script', type='application/ld+json')
     for script in scripts:
         try:
@@ -86,81 +87,74 @@ def get_smart_price(soup):
                 if 'lowPrice' in offer: return str(offer['lowPrice'])
         except:
             continue
-
-    # 2. Check Meta Tags
-    for meta in soup.find_all("meta"):
-        if meta.get("property") in ["og:price:amount", "product:price:amount"]:
-            return meta.get("content")
-    
     return None
 
-def get_price(driver, url):
-    """Navigates to URL, Scrolls, and Scrapes."""
+def get_price(driver, url, product_name="Unknown"):
+    """Navigates to URL, Scrolls, and Scrapes with Debugging."""
     if not isinstance(url, str) or "http" not in url:
         return "Not Available"
 
     try:
         driver.get(url)
         
-        # --- NEW: SCROLL DOWN TO TRIGGER LOAD ---
-        # Scroll down 500px, wait, scroll more
+        # SCROLL LOGIC (Triggers Lazy Load)
         driver.execute_script("window.scrollBy(0, 500);")
         time.sleep(2)
         driver.execute_script("window.scrollBy(0, 500);")
-        time.sleep(3) # Wait for lazy elements
-        
+        time.sleep(3) 
+
         soup = BeautifulSoup(driver.page_source, "html.parser")
         price_text = None
         
-        # 1. Try Smart Data (Hidden JSON)
+        # 1. Try JSON-LD (Best for Meesho/Snapdeal)
         price_text = get_smart_price(soup)
 
-        # 2. If Smart Data fails, try Visual Selectors
+        # 2. Try XPath Text Search (If JSON fails)
         if not price_text:
-            if "meesho" in url:
-                # Search for any header with ₹
-                for h in soup.find_all(['h4', 'h5', 'span', 'div']):
-                    txt = h.get_text().strip()
-                    if txt.startswith('₹') and len(txt) < 10:
+            try:
+                # Look for ANY header or span containing '₹'
+                # This bypasses class name changes completely
+                xpath_query = "//*[contains(text(), '₹') and string-length(text()) < 15]"
+                elements = driver.find_elements(By.XPATH, xpath_query)
+                
+                for el in elements:
+                    txt = el.text.strip()
+                    # Filter out garbage, keep realistic prices
+                    if re.match(r"₹\s?[\d,]+", txt):
                         price_text = txt
                         break
+            except:
+                pass
 
-            elif "snapdeal" in url:
-                element = soup.find("span", {"class": "payBlkBig"})
-                if not element: element = soup.find("span", {"class": "pdp-final-price"})
-                if element: price_text = element.get_text()
-
-            elif "amazon" in url:
-                element = soup.find("span", {"class": "a-price-whole"})
-                if not element: element = soup.find("span", {"class": "a-offscreen"})
-                if element: price_text = element.get_text()
-
-            elif "flipkart" in url:
-                element = soup.find("div", {"class": "Nx9bqj CxhGGd"})
-                if not element: element = soup.find("div", {"class": "_30jeq3"})
-                if element: price_text = element.get_text()
-
-            elif "1mg" in url:
-                element = soup.find("div", {"class": "Price__price___3NyX9"})
-                if not element: element = soup.find("div", {"class": "DrugPriceBox__best-price___32JXw"})
-                if element: price_text = element.get_text()
-
-            elif "moglix" in url:
-                element = soup.find("div", {"class": "p-dp-price-amount"})
-                if element: price_text = element.get_text()
-            
-            elif "blinkit" in url:
-                element = soup.find("div", {"class": "ProductVariants__Price-sc-1unev4j-2"})
-                if element: price_text = element.get_text()
-
-        # 3. UNIVERSAL FALLBACK (Last Resort)
-        # Scan entire page for "₹ 123" pattern if nothing else worked
+        # 3. Platform Specific Fallbacks
         if not price_text:
-            # Find closest text to the word "Price" or just a currency symbol
-            regex = re.compile(r"₹\s?[\d,.]+")
-            match = regex.search(soup.get_text())
-            if match:
-                price_text = match.group()
+            if "snapdeal" in url:
+                # Snapdeal often uses 'Rs.' instead of '₹'
+                try:
+                    el = driver.find_element(By.CLASS_NAME, "payBlkBig")
+                    price_text = el.text
+                except:
+                    try:
+                        el = driver.find_element(By.CLASS_NAME, "pdp-final-price")
+                        price_text = el.text
+                    except: pass
+
+            elif "meesho" in url:
+                 # Meesho Fallback
+                 try:
+                     el = driver.find_element(By.XPATH, "//h4[contains(text(), '₹')]")
+                     price_text = el.text
+                 except: pass
+
+        # --- DEBUG: TAKE SCREENSHOT IF FAILED ---
+        if not price_text:
+            print(f"      [DEBUG] Failed to find price for {product_name}. Taking screenshot...")
+            safe_name = re.sub(r'\W+', '_', product_name)[:15]
+            driver.save_screenshot(f"error_{safe_name}.png")
+            
+            # Check Page Title for Blocking
+            if "Access Denied" in driver.title or "Robot" in driver.title:
+                return "Blocked by Website"
 
         return clean_price(price_text) if price_text else "Out of Stock / Error"
 
@@ -169,7 +163,7 @@ def get_price(driver, url):
         return "Error"
 
 def main():
-    print("Bot: Starting Driver with Scroll...")
+    print("Bot: Starting Driver...")
     driver = get_driver()
     
     try:
@@ -185,17 +179,20 @@ def main():
         for index, row in df.iterrows():
             row_data = []
             
-            row_data.append(str(row.iloc[0]))
-            row_data.append(str(row.iloc[1]))
-            row_data.append(str(row.iloc[2]))
+            # Use iloc for safer access
+            brand = str(row.iloc[0])
+            product = str(row.iloc[1])
+            row_data.append(brand) 
+            row_data.append(product) 
+            row_data.append(str(row.iloc[2])) 
             
             for col_idx in range(3, len(headers)):
                 cell_value = row.iloc[col_idx]
                 col_name = headers[col_idx]
                 
                 if isinstance(cell_value, str) and "http" in cell_value:
-                    print(f"   -> Scraping {col_name}...")
-                    price = get_price(driver, cell_value)
+                    print(f"   -> Scraping {product} on {col_name}...")
+                    price = get_price(driver, cell_value, product)
                     print(f"      [Result]: {price}")
                     row_data.append(price)
                 else:
