@@ -34,7 +34,9 @@ def get_driver():
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--window-size=1920,1080")
     chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+    chrome_options.add_argument("--enable-javascript")
     
+    # Randomize User Agent slightly to avoid static blocking
     user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     chrome_options.add_argument(f"user-agent={user_agent}")
     
@@ -68,98 +70,97 @@ def clean_price(text):
     return None
 
 def get_smart_price(soup):
-    """
-    Attempts to find price in hidden JSON-LD or Meta tags.
-    This works for Meesho, Snapdeal, Myntra, and many others automatically.
-    """
-    # 1. Check JSON-LD (The gold standard for bots)
+    """Checks JSON-LD and Meta tags."""
+    # 1. Check JSON-LD
     scripts = soup.find_all('script', type='application/ld+json')
     for script in scripts:
         try:
+            if not script.string: continue
             data = json.loads(script.string)
-            # Schema.org Product/Offer structure
-            if isinstance(data, list): data = data[0] # Sometimes it's a list
+            if isinstance(data, list): data = data[0]
             
             if 'offers' in data:
                 offer = data['offers']
                 if isinstance(offer, list): offer = offer[0]
-                
-                if 'price' in offer: return offer['price']
-                if 'lowPrice' in offer: return offer['lowPrice']
+                if 'price' in offer: return str(offer['price'])
+                if 'lowPrice' in offer: return str(offer['lowPrice'])
         except:
             continue
 
-    # 2. Check Meta Tags (OpenGraph / Twitter Cards)
-    meta_price = soup.find("meta", property="og:price:amount")
-    if meta_price: return meta_price.get("content")
-
-    meta_price = soup.find("meta", property="product:price:amount")
-    if meta_price: return meta_price.get("content")
+    # 2. Check Meta Tags
+    for meta in soup.find_all("meta"):
+        if meta.get("property") in ["og:price:amount", "product:price:amount"]:
+            return meta.get("content")
     
     return None
 
 def get_price(driver, url):
-    """Navigates to URL and scrapes price."""
+    """Navigates to URL, Scrolls, and Scrapes."""
     if not isinstance(url, str) or "http" not in url:
         return "Not Available"
 
     try:
         driver.get(url)
-        time.sleep(5) # Wait for JS to load
+        
+        # --- NEW: SCROLL DOWN TO TRIGGER LOAD ---
+        # Scroll down 500px, wait, scroll more
+        driver.execute_script("window.scrollBy(0, 500);")
+        time.sleep(2)
+        driver.execute_script("window.scrollBy(0, 500);")
+        time.sleep(3) # Wait for lazy elements
         
         soup = BeautifulSoup(driver.page_source, "html.parser")
         price_text = None
         
-        # --- STRATEGY 1: SMART HIDDEN DATA (Works for Meesho/Snapdeal) ---
-        smart_price = get_smart_price(soup)
-        if smart_price:
-            return clean_price(smart_price)
+        # 1. Try Smart Data (Hidden JSON)
+        price_text = get_smart_price(soup)
 
-        # --- STRATEGY 2: VISUAL FALLBACKS ---
-        
-        # 1. MEESHO VISUAL
-        if "meesho" in url:
-            # Look for the large heading with ₹ symbol
-            for h in soup.find_all(['h4', 'h5']):
-                if '₹' in h.get_text():
-                    price_text = h.get_text()
-                    break
+        # 2. If Smart Data fails, try Visual Selectors
+        if not price_text:
+            if "meesho" in url:
+                # Search for any header with ₹
+                for h in soup.find_all(['h4', 'h5', 'span', 'div']):
+                    txt = h.get_text().strip()
+                    if txt.startswith('₹') and len(txt) < 10:
+                        price_text = txt
+                        break
 
-        # 2. SNAPDEAL VISUAL
-        elif "snapdeal" in url:
-            element = soup.find("span", {"class": "payBlkBig"})
-            if not element: element = soup.find("span", {"class": "pdp-final-price"})
-            if not element: element = soup.find("input", {"id": "productPrice"}) # Hidden Input
-            if element: 
-                price_text = element.get_text() if element.name != "input" else element.get('value')
+            elif "snapdeal" in url:
+                element = soup.find("span", {"class": "payBlkBig"})
+                if not element: element = soup.find("span", {"class": "pdp-final-price"})
+                if element: price_text = element.get_text()
 
-        # 3. AMAZON VISUAL
-        elif "amazon" in url:
-            element = soup.find("span", {"class": "a-price-whole"})
-            if not element: element = soup.find("span", {"class": "a-offscreen"})
-            if element: price_text = element.get_text()
+            elif "amazon" in url:
+                element = soup.find("span", {"class": "a-price-whole"})
+                if not element: element = soup.find("span", {"class": "a-offscreen"})
+                if element: price_text = element.get_text()
 
-        # 4. FLIPKART VISUAL
-        elif "flipkart" in url:
-            element = soup.find("div", {"class": "Nx9bqj CxhGGd"})
-            if not element: element = soup.find("div", {"class": "_30jeq3 _16Jk6d"})
-            if element: price_text = element.get_text()
+            elif "flipkart" in url:
+                element = soup.find("div", {"class": "Nx9bqj CxhGGd"})
+                if not element: element = soup.find("div", {"class": "_30jeq3"})
+                if element: price_text = element.get_text()
 
-        # 5. TATA 1MG VISUAL
-        elif "1mg" in url:
-            element = soup.find("div", {"class": "Price__price___3NyX9"})
-            if not element: element = soup.find("div", {"class": "DrugPriceBox__best-price___32JXw"})
-            if element: price_text = element.get_text()
+            elif "1mg" in url:
+                element = soup.find("div", {"class": "Price__price___3NyX9"})
+                if not element: element = soup.find("div", {"class": "DrugPriceBox__best-price___32JXw"})
+                if element: price_text = element.get_text()
 
-        # 6. MOGLIX VISUAL
-        elif "moglix" in url:
-            element = soup.find("div", {"class": "p-dp-price-amount"})
-            if element: price_text = element.get_text()
-        
-        # 7. BLINKIT
-        elif "blinkit" in url:
-            element = soup.find("div", {"class": "ProductVariants__Price-sc-1unev4j-2"})
-            if element: price_text = element.get_text()
+            elif "moglix" in url:
+                element = soup.find("div", {"class": "p-dp-price-amount"})
+                if element: price_text = element.get_text()
+            
+            elif "blinkit" in url:
+                element = soup.find("div", {"class": "ProductVariants__Price-sc-1unev4j-2"})
+                if element: price_text = element.get_text()
+
+        # 3. UNIVERSAL FALLBACK (Last Resort)
+        # Scan entire page for "₹ 123" pattern if nothing else worked
+        if not price_text:
+            # Find closest text to the word "Price" or just a currency symbol
+            regex = re.compile(r"₹\s?[\d,.]+")
+            match = regex.search(soup.get_text())
+            if match:
+                price_text = match.group()
 
         return clean_price(price_text) if price_text else "Out of Stock / Error"
 
@@ -168,7 +169,7 @@ def get_price(driver, url):
         return "Error"
 
 def main():
-    print("Bot: Starting Smart Driver...")
+    print("Bot: Starting Driver with Scroll...")
     driver = get_driver()
     
     try:
