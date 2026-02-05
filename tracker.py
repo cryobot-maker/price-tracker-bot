@@ -3,7 +3,7 @@ import gspread
 import time
 import os
 import json
-import random
+import re
 from bs4 import BeautifulSoup
 from oauth2client.service_account import ServiceAccountCredentials
 from dotenv import load_dotenv
@@ -32,20 +32,18 @@ def get_driver():
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--window-size=1920,1080") # Fake a real screen size
-    chrome_options.add_argument("--disable-blink-features=AutomationControlled") # Hide "Automation" flag
+    chrome_options.add_argument("--window-size=1920,1080")
+    chrome_options.add_argument("--disable-blink-features=AutomationControlled")
     
-    # Fake a real User Agent
     user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     chrome_options.add_argument(f"user-agent={user_agent}")
     
-    # Exclude automation switches
     chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
     chrome_options.add_experimental_option("useAutomationExtension", False)
 
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
     
-    # Execute CDP command to further hide selenium
+    # Execute CDP command to hide selenium
     driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
         "source": """
             Object.defineProperty(navigator, 'webdriver', {
@@ -59,70 +57,92 @@ def get_driver():
 def clean_price(text):
     """Extracts numbers from price text."""
     if not text: return None
+    # Remove everything except digits and dots
     clean = "".join([c for c in text if c.isdigit() or c == '.'])
     if clean:
         try:
-            return f"₹{float(clean):.2f}"
+            # Check if it's a valid number
+            val = float(clean)
+            return f"₹{val:.2f}"
         except:
             return text
     return None
 
 def get_price(driver, url):
-    """Navigates to URL and scrapes price using Selenium."""
+    """Navigates to URL and scrapes price using Updated Logic."""
     if not isinstance(url, str) or "http" not in url:
         return "Not Available"
 
     try:
         driver.get(url)
-        time.sleep(5) # Increased wait time for slow loading
+        time.sleep(5) # Wait for page load
         
-        # DEBUG: Print title to check if blocked
-        page_title = driver.title.strip()
-        print(f"      [Page Title]: {page_title[:30]}...") 
-
         soup = BeautifulSoup(driver.page_source, "html.parser")
         price_text = None
-
-        # --- AMAZON LOGIC ---
+        
+        # --- 1. AMAZON ---
         if "amazon" in url:
             element = soup.find("span", {"class": "a-price-whole"})
             if not element: element = soup.find("span", {"class": "a-offscreen"})
             if not element: element = soup.find("span", {"id": "priceblock_ourprice"})
-            if not element: element = soup.find("span", {"id": "priceblock_dealprice"})
             if element: price_text = element.get_text()
 
-        # --- FLIPKART LOGIC ---
+        # --- 2. FLIPKART (Updated) ---
         elif "flipkart" in url:
-            element = soup.find("div", {"class": "_30jeq3 _16Jk6d"})
-            if not element: element = soup.find("div", {"class": "_30jeq3"})
+            # New Class (2025/26 update): Nx9bqj
+            element = soup.find("div", {"class": "Nx9bqj CxhGGd"}) 
+            if not element: element = soup.find("div", {"class": "Nx9bqj"})
+            if not element: element = soup.find("div", {"class": "_30jeq3 _16Jk6d"}) # Old class
             if element: price_text = element.get_text()
 
-        # --- TATA 1MG LOGIC ---
+        # --- 3. TATA 1MG (Updated) ---
         elif "1mg" in url:
+            # Look for div containing '₹' with specific styles
             element = soup.find("div", {"class": "Price__price___3NyX9"})
             if not element: element = soup.find("div", {"class": "DrugPriceBox__best-price___32JXw"})
+            if not element: element = soup.find("div", {"class": "style__price-tag___c4ZQN"})
             if element: price_text = element.get_text()
 
-        # --- JIO MART LOGIC ---
+        # --- 4. SNAPDEAL (New) ---
+        elif "snapdeal" in url:
+            element = soup.find("span", {"class": "payBlkBig"})
+            if not element: element = soup.find("span", {"class": "pdp-final-price"})
+            if element: price_text = element.get_text()
+
+        # --- 5. MEESHO (Updated) ---
+        elif "meesho" in url:
+            # Meesho classes are random (sc-...), usually inside an h4
+            element = soup.find("h4", class_=lambda x: x and 'sc-' in x)
+            if element: price_text = element.get_text()
+
+        # --- 6. MOGLIX (Updated) ---
+        elif "moglix" in url:
+            element = soup.find("div", {"class": "p-dp-price-amount"})
+            if not element: element = soup.find("span", {"class": "promo-price"})
+            if element: price_text = element.get_text()
+
+        # --- 7. JIO MART ---
         elif "jiomart" in url:
             element = soup.find("div", {"id": "price_section"})
             if not element: element = soup.find("span", {"class": "final-price"})
             if element: price_text = element.get_text()
-            
-        # --- BLINKIT LOGIC ---
+
+        # --- 8. BLINKIT ---
         elif "blinkit" in url:
             element = soup.find("div", {"class": "ProductVariants__Price-sc-1unev4j-2"})
             if element: price_text = element.get_text()
 
-        # --- MOGLIX LOGIC ---
-        elif "moglix" in url:
-             element = soup.find("div", {"class": "p-dp-price-amount"})
-             if element: price_text = element.get_text()
-        
-        # --- MEESHO LOGIC ---
-        elif "meesho" in url:
-             element = soup.find("h4", {"class": "sc-eDvSVe"})
-             if element: price_text = element.get_text()
+        # --- 9. GENERIC FALLBACK (Last Resort) ---
+        # If no specific logic worked, look for any large text starting with ₹
+        if not price_text:
+            # Find elements with '₹' in text
+            candidates = soup.find_all(string=re.compile("₹"))
+            for cand in candidates:
+                parent = cand.parent
+                # Check if it looks like a price (not a huge paragraph)
+                if len(parent.get_text()) < 20:
+                    price_text = parent.get_text()
+                    break
 
         return clean_price(price_text) if price_text else "Out of Stock / Error"
 
