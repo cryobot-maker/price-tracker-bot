@@ -1,3 +1,4 @@
+from datetime import datetime
 import pandas as pd
 import gspread
 import time
@@ -24,6 +25,7 @@ load_dotenv()
 EXCEL_FILE = "products.xlsx"
 SHEET_NAME = "Price Tracker 2026"
 GOOGLE_CREDENTIALS_JSON = os.getenv("GOOGLE_CREDENTIALS_JSON")
+def main():
 
 def get_driver():
     """Sets up a Stealthy Chrome browser with Referer spoofing."""
@@ -165,6 +167,8 @@ def get_price(driver, url, product_name="Unknown"):
 def main():
     print("Bot: Starting Driver...")
     driver = get_driver()
+    fetch_time = datetime.now().strftime("%d %b %Y %I:%M %p")
+
     
     try:
         print("Bot: Reading Excel file...")
@@ -197,7 +201,7 @@ def main():
                     row_data.append(price)
                 else:
                     row_data.append("Not Available")
-            
+            row_data.append(fetch_time)
             final_data.append(row_data)
 
         print("Bot: Uploading to Google Sheets...")
