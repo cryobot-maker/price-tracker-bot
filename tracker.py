@@ -25,7 +25,6 @@ load_dotenv()
 EXCEL_FILE = "products.xlsx"
 SHEET_NAME = "Price Tracker 2026"
 GOOGLE_CREDENTIALS_JSON = os.getenv("GOOGLE_CREDENTIALS_JSON")
-def main():
 
 def get_driver():
     """Sets up a Stealthy Chrome browser with Referer spoofing."""
