@@ -174,6 +174,7 @@ def main():
         
         final_data = []
         headers = df.columns.tolist()
+        headers.append("Last Fetched At")
         final_data.append(headers)
 
         print("Bot: Scraping prices...")
