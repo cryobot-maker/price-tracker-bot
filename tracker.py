@@ -1,4 +1,5 @@
 from datetime import datetime
+import pytz
 import pandas as pd
 import gspread
 import time
@@ -165,8 +166,8 @@ def get_price(driver, url, product_name="Unknown"):
 def main():
     print("Bot: Starting Driver...")
     driver = get_driver()
-    fetch_time = datetime.now().strftime("%d %b %Y %I:%M %p")
-
+    ist = pytz.timezone("Asia/Kolkata")
+    fetch_time = datetime.now(ist).strftime("%Y-%m-%d %H:%M:%S")
     
     try:
         print("Bot: Reading Excel file...")
@@ -292,12 +293,20 @@ def main():
             )
 
         comp_sheet.clear()
+        # format header
+        comp_sheet.format("A1:G1", {
+            "backgroundColor": {"red": 0.85, "green": 0.92, "blue": 0.98},
+            "textFormat": {
+                "bold": True
+            }
+        })
+
         comp_sheet.update("A1", competitor_data)
 
 
     except Exception as e:
-     import traceback
-     traceback.print_exc()
+     print(f"Fatal Error: {e}")
+
 
     finally:
         driver.quit()
