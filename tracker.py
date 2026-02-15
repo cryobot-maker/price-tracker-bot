@@ -170,13 +170,12 @@ def main():
     
     try:
         print("Bot: Reading Excel file...")
-        df = pd.read_excel(EXCEL_FILE, dtype=str)
+        df = pd.read_excel(EXCEL_FILE, sheet_name="Cimexis Products", dtype=str)
         
         final_data = []
         headers = df.columns.tolist()
         headers.append("Last Fetched At")
         final_data.append(headers)
-
         print("Bot: Scraping prices...")
         
         for index, row in df.iterrows():
@@ -189,7 +188,7 @@ def main():
             row_data.append(product) 
             row_data.append(str(row.iloc[2])) 
             
-            for col_idx in range(3, len(headers)):
+            for col_idx in range(3, len(df.columns)):
                 cell_value = row.iloc[col_idx]
                 col_name = headers[col_idx]
                 
@@ -227,9 +226,79 @@ def main():
         })
         
         print("Bot: Success! Prices updated.")
+                # ==========================================
+        # COMPETITOR SCRAPE FROM SAME EXCEL
+        # ==========================================
+        print("Bot: Starting competitor scraping...")
+
+        competitor_data = []
+        competitor_headers = [
+            "Brand",
+            "Product",
+            "Competitor Product",
+            "Platform",
+            "Pack Size",
+            "Price",
+            "Last Fetched At"
+        ]
+        competitor_data.append(competitor_headers)
+
+        # Re-read same Excel
+        comp_df = pd.read_excel(EXCEL_FILE, sheet_name="Competitor Analysis", dtype=str)
+        comp_df = comp_df.ffill()
+
+
+
+        for index, row in comp_df.iterrows():
+
+        # if row doesn't have columns till H, skip
+            if len(row) <= 7:
+                print(f"Skipping short row {index}")
+                continue
+
+            brand = str(row.iloc[0])
+            product = str(row.iloc[1])
+            competitor_product = str(row.iloc[4])
+            platform = str(row.iloc[5])
+            pack = str(row.iloc[6])
+            url = str(row.iloc[7])
+
+            if not isinstance(url, str) or "http" not in url:
+             continue
+
+            print(f"   -> Scraping competitor {competitor_product}...")
+            price = get_price(driver, url, competitor_product)
+
+            competitor_data.append([
+            brand,
+            product,
+            competitor_product,
+            platform,
+            pack,
+            price,
+            fetch_time
+            ])
+
+
+        print("Bot: Uploading competitor sheet...")
+
+        try:
+            comp_sheet = client.open(SHEET_NAME).worksheet("Competitor Prices")
+        except:
+            comp_sheet = client.open(SHEET_NAME).add_worksheet(
+                title="Competitor Prices",
+                rows="2000",
+                cols="20"
+            )
+
+        comp_sheet.clear()
+        comp_sheet.update("A1", competitor_data)
+
 
     except Exception as e:
-        print(f"Fatal Error: {e}")
+     import traceback
+     traceback.print_exc()
+
     finally:
         driver.quit()
 
