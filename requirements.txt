@@ -7,3 +7,4 @@ openpyxl
 python-dotenv
 selenium
 webdriver-manager
+pytz
