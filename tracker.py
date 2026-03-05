@@ -172,17 +172,18 @@ def main():
         print("Bot: Reading Cimexis Product URLs...")
 
      
-        df = pd.DataFrame(product_data[1:], columns=product_data[0])
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+
         if GOOGLE_CREDENTIALS_JSON:
             creds_dict = json.loads(GOOGLE_CREDENTIALS_JSON)
             creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
         else:
             creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
-            
+
         client = gspread.authorize(creds)
         product_sheet = client.open(SHEET_NAME).worksheet("Cimexis Product List")
         product_data = product_sheet.get_all_values()
+        df = pd.DataFrame(product_data[1:], columns=product_data[0])
         final_data = []
         headers = df.columns.tolist()
        #headers.append("Last Fetched At")
