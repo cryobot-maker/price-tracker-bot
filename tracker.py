@@ -173,7 +173,7 @@ def main():
 
      
         df = pd.DataFrame(product_data[1:], columns=product_data[0])
-         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
           if GOOGLE_CREDENTIALS_JSON:
             creds_dict = json.loads(GOOGLE_CREDENTIALS_JSON)
             creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
