@@ -186,7 +186,7 @@ def main():
         df = pd.DataFrame(product_data[1:], columns=product_data[0])
         final_data = []
         headers = df.columns.tolist()
-       #headers.append("Last Fetched At")
+        headers.append("Last Fetched At")
         final_data.append(headers)
         print("Bot: Scraping prices...")
         
@@ -207,8 +207,12 @@ def main():
                 if isinstance(cell_value, str) and "http" in cell_value:
                     print(f"   -> Scraping {product} on {col_name}...")
                     price = get_price(driver, cell_value, product)
+                    # Keep previous value if scraping failed
+                    if price in ["Out of Stock / Error", "Error", None]:
+                        row_data.append(row.iloc[col_idx])  # keep old value
+                    else:
+                        row_data.append(price)
                     print(f"      [Result]: {price}")
-                    row_data.append(price)
                 else:
                     row_data.append("Not Available")
             row_data.append(fetch_time)
@@ -219,7 +223,6 @@ def main():
       
         price_sheet = client.open(SHEET_NAME).worksheet("Cimexis Price Tracker 2026")
         
-        price_sheet.clear()
         price_sheet.update("A1", final_data)
         
         price_sheet.format("A1:Z1", {
