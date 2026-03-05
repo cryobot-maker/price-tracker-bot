@@ -183,6 +183,11 @@ def main():
         client = gspread.authorize(creds)
         product_sheet = client.open(SHEET_NAME).worksheet("Cimexis Product List")
         product_data = product_sheet.get_all_values()
+        price_sheet = client.open(SHEET_NAME).worksheet("Cimexis Price Tracker 2026")
+        existing_data = price_sheet.get_all_values()
+        existing_df = None
+        if len(existing_data) > 1:
+            existing_df = pd.DataFrame(existing_data[1:], columns=existing_data[0])
         df = pd.DataFrame(product_data[1:], columns=product_data[0])
         final_data = []
         headers = df.columns.tolist()
@@ -208,10 +213,6 @@ def main():
                     print(f"   -> Scraping {product} on {col_name}...")
                     price = get_price(driver, cell_value, product)
                     # Keep previous value if scraping failed
-                    if price in ["Out of Stock / Error", "Error", None]:
-                        row_data.append(row.iloc[col_idx])  # keep old value
-                    else:
-                        row_data.append(price)
                     print(f"      [Result]: {price}")
                 else:
                     row_data.append("Not Available")
