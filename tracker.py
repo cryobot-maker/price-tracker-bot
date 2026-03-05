@@ -23,7 +23,6 @@ from selenium.webdriver.support import expected_conditions as EC
 load_dotenv()
 
 # --- CONFIGURATION ---
-EXCEL_FILE = "products.xlsx"
 SHEET_NAME = "Price Tracker 2026"
 GOOGLE_CREDENTIALS_JSON = os.getenv("GOOGLE_CREDENTIALS_JSON")
 def get_driver():
@@ -170,12 +169,23 @@ def main():
     fetch_time = datetime.now(ist).strftime("%Y-%m-%d %H:%M:%S")
     
     try:
-        print("Bot: Reading Excel file...")
-        df = pd.read_excel(EXCEL_FILE, sheet_name="Cimexis Products", dtype=str)
-        
+        print("Bot: Reading Cimexis Product URLs...")
+
+     
+        df = pd.DataFrame(product_data[1:], columns=product_data[0])
+         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+          if GOOGLE_CREDENTIALS_JSON:
+            creds_dict = json.loads(GOOGLE_CREDENTIALS_JSON)
+            creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+          else:
+            creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
+            
+        client = gspread.authorize(creds)
+        product_sheet = client.open(SHEET_NAME).worksheet("Cimexis Product List")
+        product_data = product_sheet.get_all_values()
         final_data = []
         headers = df.columns.tolist()
-        headers.append("Last Fetched At")
+       #headers.append("Last Fetched At")
         final_data.append(headers)
         print("Bot: Scraping prices...")
         
@@ -204,25 +214,18 @@ def main():
             final_data.append(row_data)
 
         print("Bot: Uploading to Google Sheets...")
-        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
         
-        if GOOGLE_CREDENTIALS_JSON:
-            creds_dict = json.loads(GOOGLE_CREDENTIALS_JSON)
-            creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
-        else:
-            creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
-            
-        client = gspread.authorize(creds)
-        sheet = client.open(SHEET_NAME).sheet1
+      
+        price_sheet = client.open(SHEET_NAME).worksheet("Cimexis Price Tracker 2026")
         
-        sheet.clear()
-        sheet.update(range_name="A1", values=final_data)
+        price_sheet.clear()
+        price_sheet.update("A1", final_data)
         
-        sheet.format("A1:Z1", {
+        price_sheet.format("A1:Z1", {
             "backgroundColor": {"red": 0.0, "green": 0.2, "blue": 0.6},
             "textFormat": {"foregroundColor": {"red": 1.0, "green": 1.0, "blue": 1.0}, "bold": True}
         })
-        sheet.format("A2:C100", {
+        price_sheet.format("A2:C100", {
             "backgroundColor": {"red": 0.95, "green": 0.95, "blue": 0.95}
         })
         
@@ -245,40 +248,74 @@ def main():
         competitor_data.append(competitor_headers)
 
         # Re-read same Excel
-        comp_df = pd.read_excel(EXCEL_FILE, sheet_name="Competitor Analysis", dtype=str)
+        print("Bot: Reading Competitor URLs...")
+
+        competitor_sheet = client.open(SHEET_NAME).worksheet("Competitor Product List")
+        comp_data = competitor_sheet.get_all_values()
+        comp_df = pd.DataFrame(comp_data[1:], columns=comp_data[0])
+
         comp_df = comp_df.ffill()
 
 
 
         for index, row in comp_df.iterrows():
 
-        # if row doesn't have columns till H, skip
-            if len(row) <= 7:
-                print(f"Skipping short row {index}")
-                continue
+            sku = str(row.iloc[0])
+            hero = str(row.iloc[1])
 
-            brand = str(row.iloc[0])
-            product = str(row.iloc[1])
-            competitor_product = str(row.iloc[4])
-            platform = str(row.iloc[5])
-            pack = str(row.iloc[6])
-            url = str(row.iloc[7])
+            # Amazon
+            amazon_name = str(row.iloc[2])
+            amazon_url = str(row.iloc[3])
 
-            if not isinstance(url, str) or "http" not in url:
-             continue
+            if "http" in amazon_url:
+                print(f"Scraping Amazon competitor: {amazon_name}")
+                price = get_price(driver, amazon_url, amazon_name)
 
-            print(f"   -> Scraping competitor {competitor_product}...")
-            price = get_price(driver, url, competitor_product)
+                competitor_data.append([
+                    sku,
+                    hero,
+                    amazon_name,
+                    "Amazon",
+                    "",
+                    price,
+                    fetch_time
+                ])
 
-            competitor_data.append([
-            brand,
-            product,
-            competitor_product,
-            platform,
-            pack,
-            price,
-            fetch_time
-            ])
+            # Flipkart
+            flipkart_name = str(row.iloc[4])
+            flipkart_url = str(row.iloc[5])
+
+            if "http" in flipkart_url:
+                print(f"Scraping Flipkart competitor: {flipkart_name}")
+                price = get_price(driver, flipkart_url, flipkart_name)
+
+                competitor_data.append([
+                    sku,
+                    hero,
+                    flipkart_name,
+                    "Flipkart",
+                    "",
+                    price,
+                    fetch_time
+                ])
+
+            # Blinkit
+            blinkit_name = str(row.iloc[6])
+            blinkit_url = str(row.iloc[7])
+
+            if "http" in blinkit_url:
+                print(f"Scraping Blinkit competitor: {blinkit_name}")
+                price = get_price(driver, blinkit_url, blinkit_name)
+
+                competitor_data.append([
+                    sku,
+                    hero,
+                    blinkit_name,
+                    "Blinkit",
+                    "",
+                    price,
+                    fetch_time
+                ])
 
 
         print("Bot: Uploading competitor sheet...")
