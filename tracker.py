@@ -47,7 +47,6 @@ def get_driver():
     chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
     chrome_options.add_experimental_option("useAutomationExtension", False)
 
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
     
     # Hide WebDriver property
     driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
@@ -99,7 +98,7 @@ def get_price(driver, url, product_name="Unknown"):
     try:
         try:
             driver.get(url)
-            except Exception:
+        except Exception:
             print("Page load timeout — skipping")
             return "Timeout"
                 
