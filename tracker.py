@@ -253,90 +253,46 @@ def main():
         # ==========================================
         print("Bot: Starting competitor scraping...")
 
-        competitor_data = []
-        competitor_headers = [
-            "Brand",
-            "Product",
-            "Competitor Product",
-            "Platform",
-            "Pack Size",
-            "Price",
-            "Last Fetched At"
-        ]
-        competitor_data.append(competitor_headers)
-
-        # Re-read same Excel
-        print("Bot: Reading Competitor URLs...")
+        print("Bot: Starting competitor scraping...")
 
         competitor_sheet = client.open(SHEET_NAME).worksheet("Competitor Product List")
         comp_data = competitor_sheet.get_all_values()
-        comp_df = pd.DataFrame(comp_data[1:], columns=comp_data[0])
 
+        comp_df = pd.DataFrame(comp_data[1:], columns=comp_data[0])
         comp_df = comp_df.ffill()
 
-
+        output_df = comp_df.copy()
 
         for index, row in comp_df.iterrows():
 
-            sku = str(row.iloc[0])
-            hero = str(row.iloc[1])
-
-            # Amazon
-            amazon_name = str(row.iloc[2])
-            amazon_url = str(row.iloc[3])
-
+            # AMAZON
+            amazon_url = str(row.iloc[4])
             if "http" in amazon_url:
-                print(f"Scraping Amazon competitor: {amazon_name}")
-                price = get_price(driver, amazon_url, amazon_name)
+                print(f"Scraping Amazon competitor: {row.iloc[2]}")
+                price = get_price(driver, amazon_url, row.iloc[2])
+                output_df.iat[index,4] = price
 
-                competitor_data.append([
-                    sku,
-                    hero,
-                    amazon_name,
-                    "Amazon",
-                    "",
-                    price,
-                    fetch_time
-                ])
-
-            # Flipkart
-            flipkart_name = str(row.iloc[4])
-            flipkart_url = str(row.iloc[5])
-
+            # FLIPKART
+            flipkart_url = str(row.iloc[7])
             if "http" in flipkart_url:
-                print(f"Scraping Flipkart competitor: {flipkart_name}")
-                price = get_price(driver, flipkart_url, flipkart_name)
+                print(f"Scraping Flipkart competitor: {row.iloc[5]}")
+                price = get_price(driver, flipkart_url, row.iloc[5])
+                output_df.iat[index,7] = price
 
-                competitor_data.append([
-                    sku,
-                    hero,
-                    flipkart_name,
-                    "Flipkart",
-                    "",
-                    price,
-                    fetch_time
-                ])
-
-            # Blinkit
-            blinkit_name = str(row.iloc[6])
-            blinkit_url = str(row.iloc[7])
-
+            # BLINKIT
+            blinkit_url = str(row.iloc[10])
             if "http" in blinkit_url:
-                print(f"Scraping Blinkit competitor: {blinkit_name}")
-                price = get_price(driver, blinkit_url, blinkit_name)
+                print(f"Scraping Blinkit competitor: {row.iloc[8]}")
+                price = get_price(driver, blinkit_url, row.iloc[8])
+                output_df.iat[index,10] = price
 
-                competitor_data.append([
-                    sku,
-                    hero,
-                    blinkit_name,
-                    "Blinkit",
-                    "",
-                    price,
-                    fetch_time
-                ])
-
-
-        print("Bot: Uploading competitor sheet...")
+            # OTHERS
+            others_url = str(row.iloc[13])
+            if "http" in blinkit_url:
+                print(f"Scraping other competitor: {row.iloc[11]}")
+                price = get_price(driver, blinkit_url, row.iloc[11])
+                output_df.iat[index,10] = price
+        print("Bot: Uploading competitor prices...")
 
         try:
             comp_sheet = client.open(SHEET_NAME).worksheet("Competitor Prices")
@@ -347,16 +303,10 @@ def main():
                 cols="20"
             )
 
-        comp_sheet.clear()
-        # format header
-        comp_sheet.format("A1:G1", {
-            "backgroundColor": {"red": 0.85, "green": 0.92, "blue": 0.98},
-            "textFormat": {
-                "bold": True
-            }
-        })
+        final_output = [comp_df.columns.tolist()] + output_df.values.tolist()
 
-        comp_sheet.update("A1", competitor_data)
+        comp_sheet.clear()
+        comp_sheet.update("A1", final_output)
 
 
     except Exception as e:
