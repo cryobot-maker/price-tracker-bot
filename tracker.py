@@ -28,9 +28,7 @@ GOOGLE_CREDENTIALS_JSON = os.getenv("GOOGLE_CREDENTIALS_JSON")
 def get_driver():
     """Sets up a Stealthy Chrome browser with Referer spoofing."""
     chrome_options = Options()
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
-    driver.set_page_load_timeout(30)
-    driver.set_script_timeout(30)
+
     # --- STEALTH SETTINGS ---
     chrome_options.add_argument("--headless") 
     chrome_options.add_argument("--no-sandbox")
@@ -40,6 +38,7 @@ def get_driver():
     chrome_options.add_argument("--disable-blink-features=AutomationControlled")
     chrome_options.add_argument("--enable-javascript")
     
+ 
     # Fake User Agent
     user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
     chrome_options.add_argument(f"user-agent={user_agent}")
@@ -47,6 +46,9 @@ def get_driver():
     chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
     chrome_options.add_experimental_option("useAutomationExtension", False)
 
+    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
+    driver.set_page_load_timeout(30)
+    driver.set_script_timeout(30)
     
     # Hide WebDriver property
     driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
