@@ -221,6 +221,11 @@ def main():
                     price = get_price(driver, cell_value, product)
                     # Keep previous value if scraping failed
                     print(f"      [Result]: {price}")
+                    if price in ["Blocked by Website", "Out of Stock / Error", "Error", "Timeout"]:
+                        if existing_df is not None and index < len(existing_df):
+                            old_val = existing_df.iloc[index, col_idx]
+                            if old_val not in ["", "Not Available"]:
+                                price = old_val
                     row_data.append(price)
                 else:
                     row_data.append("Not Available")
