@@ -28,7 +28,9 @@ GOOGLE_CREDENTIALS_JSON = os.getenv("GOOGLE_CREDENTIALS_JSON")
 def get_driver():
     """Sets up a Stealthy Chrome browser with Referer spoofing."""
     chrome_options = Options()
-    
+    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
+    driver.set_page_load_timeout(30)
+    driver.set_script_timeout(30)
     # --- STEALTH SETTINGS ---
     chrome_options.add_argument("--headless") 
     chrome_options.add_argument("--no-sandbox")
@@ -95,8 +97,12 @@ def get_price(driver, url, product_name="Unknown"):
         return "Not Available"
 
     try:
-        driver.get(url)
-        
+        try:
+            driver.get(url)
+            except Exception:
+            print("Page load timeout — skipping")
+            return "Timeout"
+                
         # SCROLL LOGIC (Triggers Lazy Load)
         driver.execute_script("window.scrollBy(0, 500);")
         time.sleep(2)
@@ -214,6 +220,7 @@ def main():
                     price = get_price(driver, cell_value, product)
                     # Keep previous value if scraping failed
                     print(f"      [Result]: {price}")
+                    row_data.append(price)
                 else:
                     row_data.append("Not Available")
             row_data.append(fetch_time)
