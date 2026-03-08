@@ -152,6 +152,16 @@ def get_price(driver, url, product_name="Unknown"):
                      el = driver.find_element(By.XPATH, "//h4[contains(text(), '₹')]")
                      price_text = el.text
                  except: pass
+            elif "blinkit" in url:
+                try:
+                    el = driver.find_element(By.XPATH, "//span[contains(text(),'₹')]")
+                    price_text = el.text
+                except:
+                    try:
+                        el = driver.find_element(By.CSS_SELECTOR, "div[class*='price']")
+                        price_text = el.text
+                    except:
+                        pass
 
         # --- DEBUG: TAKE SCREENSHOT IF FAILED ---
         if not price_text:
@@ -253,7 +263,6 @@ def main():
         # ==========================================
         print("Bot: Starting competitor scraping...")
 
-        print("Bot: Starting competitor scraping...")
 
         competitor_sheet = client.open(SHEET_NAME).worksheet("Competitor Product List")
         comp_data = competitor_sheet.get_all_values()
@@ -288,10 +297,10 @@ def main():
 
             # OTHERS
             others_url = str(row.iloc[13])
-            if "http" in blinkit_url:
+            if "http" in others_url:
                 print(f"Scraping other competitor: {row.iloc[11]}")
                 price = get_price(driver, blinkit_url, row.iloc[11])
-                output_df.iat[index,10] = price
+                output_df.iat[index,13] = price
         print("Bot: Uploading competitor prices...")
 
         try:
